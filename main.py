@@ -12,7 +12,7 @@ client = Groq(api_key=GROQ_KEY)
 
 def alerta_telegram(msg):
     if TG_TOKEN and TG_CHAT_ID:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        url = "https://api.telegram.org/bot" + TG_TOKEN + "/sendMessage"
         requests.post(url, json={"chat_id": TG_CHAT_ID, "text": msg})
 
 def preguntar_ia(contexto, pregunta):
@@ -20,7 +20,7 @@ def preguntar_ia(contexto, pregunta):
         model="llama3-8b-8192",
         messages=[
             {"role": "system", "content": "Eres experto en redes MikroTik RouterOS. Analiza datos y responde SIEMPRE en español. Si hay problemas, dilo claramente."},
-            {"role": "user", "content": f"Contexto: {contexto}\n\nPregunta: {pregunta}"}
+            {"role": "user", "content": "Contexto: " + contexto + "\n\nPregunta: " + pregunta}
         ],
         max_tokens=500
     )
@@ -29,19 +29,19 @@ def preguntar_ia(contexto, pregunta):
 @app.route("/monitor", methods=["POST"])
 def monitor():
     datos = request.json or {}
-    analisis = preguntar_ia(json.dumps(datos), "Analiza estas metricas de red. Hay algo anormal o alguna alerta?")
+    analisis = preguntar_ia(json.dumps(datos), "Analiza estas metricas de red. Hay algo anormal?")
     palabras_alerta = ["alerta", "problema", "caida", "alto", "critico", "error"]
     if any(p in analisis.lower() for p in palabras_alerta):
-        alerta_telegram(f"ALERTA RED:\n{analisis}")
+        alerta_telegram("ALERTA RED:\n" + analisis)
     else:
-        alerta_telegram(f"Red estable:\n{analisis}")
+        alerta_telegram("Red estable:\n" + analisis)
     return jsonify({"ok": True, "analisis": analisis})
 
 @app.route("/orden", methods=["POST"])
 def orden():
     texto = request.json.get("texto", "") if request.json else ""
-    respuesta = preguntar_ia("Sistema MikroTik RouterOS", f"El usuario pide: {texto}. Dame el comando RouterOS exacto.")
-    alerta_telegram(f"Orden: {texto}\n\nIA responde:\n{respuesta}")
+    respuesta = preguntar_ia("Sistema MikroTik RouterOS", "El usuario pide: " + texto + ". Dame el comando RouterOS exacto.")
+    alerta_telegram("Orden: " + texto + "\n\nIA responde:\n" + respuesta)
     return jsonify({"respuesta": respuesta})
 
 @app.route("/ping")
@@ -50,10 +50,3 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-```
-
-→ Clic en **"Commit changes"** → **"Commit changes"**
-
-Railway va a detectar el cambio automáticamente y va a reiniciar. En 1 o 2 minutos los logs deben mostrar:
-```
-Running on http://0.0.0.0:XXXX
