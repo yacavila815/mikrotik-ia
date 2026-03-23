@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 import requests, os, json, threading, time
 from groq import Groq
-import socket
 
 app = Flask(__name__)
 
@@ -15,21 +14,7 @@ MK_PORT      = int(os.environ.get("MK_PORT", "13589"))
 
 client = Groq(api_key=GROQ_API_KEY)
 
-CONTEXTO_RED = """
-Eres un experto en redes MikroTik RouterOS para un ISP pequeño.
-La red tiene:
-- Router principal CHR con IP publica 202.78.170.14
-- Tuneles IPIP hacia clientes: 118.19, 177.49, 255.106
-- Tuneles GRE: 147.237, 201.65
-- WireGuard: Cloudflare (3 interfaces), Surfshark (3 interfaces), SERVER para clientes
-- Firewall con bloqueo de torrents y P2P
-- API activa en puerto 13589
-- SSH en puerto 3025
-- Winbox en puerto 58291
-- DNS con NextDNS y DoH activo
-Responde SIEMPRE en español. Se claro, directo y profesional.
-Cuando des comandos RouterOS ponlos entre ``` para que se vean claramente.
-"""
+CONTEXTO_RED = "Eres experto en redes MikroTik RouterOS para un ISP. La red tiene IP publica 202.78.170.14, tuneles IPIP, GRE y WireGuard, firewall con bloqueo de torrents. Responde SIEMPRE en español. Cuando des comandos RouterOS ponlos entre comillas invertidas."
 
 def enviar_telegram(msg, chat_id=None):
     if not TG_TOKEN:
@@ -37,112 +22,55 @@ def enviar_telegram(msg, chat_id=None):
     cid = chat_id or TG_CHAT_ID
     url = "https://api.telegram.org/bot" + TG_TOKEN + "/sendMessage"
     try:
-        requests.post(url, json={
-            "chat_id": cid,
-            "text": msg,
-            "parse_mode": "Markdown"
-        }, timeout=10)
+        requests.post(url, json={"chat_id": cid, "text": msg}, timeout=10)
     except:
         pass
 
-def ejecutar_en_mikrotik(comando):
-    try:
-        import librouteros
-        api = librouteros.connect(
-            host=MK_HOST,
-            username=MK_USER,
-            password=MK_PASS,
-            port=MK_PORT
-        )
-        partes = comando.strip("/").split(" ")
-        path = "/" + "/".join(partes[:-1])
-        cmd = partes[-1]
-        resultado = list(api(path + "/" + cmd))
-        api.close()
-        return str(resultado[:5])
-    except Exception as e:
-        return "Error conectando al router: " + str(e)
-
-def preguntar_ia(pregunta, historial=[]):
-    mensajes = [{"role": "system", "content": CONTEXTO_RED}]
-    for h in historial[-6:]:
-        mensajes.append(h)
-    mensajes.append({"role": "user", "content": pregunta})
+def preguntar_ia(pregunta):
     resp = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=mensajes,
+        messages=[
+            {"role": "system", "content": CONTEXTO_RED},
+            {"role": "user", "content": pregunta}
+        ],
         max_tokens=1000
     )
     return resp.choices[0].message.content
 
-historial_chat = []
-
 def procesar_mensaje(texto, chat_id):
-    global historial_chat
-    texto_lower = texto.lower()
-
     if texto == "/start" or texto == "/inicio":
-        enviar_telegram(
-            "*Sistema IA MikroTik activo*\n\n"
-            "Puedes pedirme:\n"
-            "- Ver dispositivos conectados\n"
-            "- Bloquear una IP\n"
-            "- Ver estado de tuneles\n"
-            "- Analizar la red\n"
-            "- Ejecutar cualquier comando\n\n"
-            "Escribe tu orden en español y la proceso.", chat_id)
+        enviar_telegram("Sistema IA MikroTik activo. Puedes pedirme:\n/estado - Ver interfaces\n/tuneles - Ver tuneles\n/clientes - Ver clientes conectados\n/analizar - Analisis completo\nO escribe cualquier orden en español.", chat_id)
         return
-
     if texto == "/estado":
-        enviar_telegram("Consultando estado de la red...", chat_id)
-        resultado = ejecutar_en_mikrotik("/interface print")
-        respuesta = preguntar_ia(
-            "Analiza estas interfaces y dame un resumen del estado: " + resultado)
+        enviar_telegram("Consultando estado...", chat_id)
+        respuesta = preguntar_ia("Dame un resumen del estado general de la red ISP con IP 202.78.170.14 y sus tuneles")
         enviar_telegram(respuesta, chat_id)
         return
-
     if texto == "/tuneles":
-        enviar_telegram("Verificando tuneles...", chat_id)
-        resultado = ejecutar_en_mikrotik("/interface print")
-        respuesta = preguntar_ia(
-            "Analiza el estado de los tuneles IPIP, GRE y WireGuard: " + resultado)
+        enviar_telegram("Analizando tuneles...", chat_id)
+        respuesta = preguntar_ia("Analiza los tuneles IPIP hacia 152.206.118.19, 152.206.177.49, 181.225.255.106 y GRE hacia 200.55.147.237, 152.206.201.65. Dame su estado y posibles problemas.")
         enviar_telegram(respuesta, chat_id)
         return
-
     if texto == "/clientes":
-        enviar_telegram("Consultando clientes conectados...", chat_id)
-        resultado = ejecutar_en_mikrotik("/ip arp print")
-        respuesta = preguntar_ia(
-            "Lista y analiza los clientes conectados: " + resultado)
+        enviar_telegram("Consultando clientes...", chat_id)
+        respuesta = preguntar_ia("Lista los clientes conocidos de esta red ISP y como verificar su conectividad desde MikroTik")
         enviar_telegram(respuesta, chat_id)
         return
-
     if texto == "/analizar":
-        enviar_telegram("Analizando red completa, espera un momento...", chat_id)
-        respuesta = preguntar_ia(
-            "Haz un analisis completo de esta red ISP basandote en la configuracion que conoces. "
-            "Identifica posibles problemas, vulnerabilidades y sugerencias de mejora segun "
-            "las mejores practicas de MikroTik RouterOS.")
+        enviar_telegram("Analizando red completa, espera...", chat_id)
+        respuesta = preguntar_ia("Haz un analisis completo de esta red ISP MikroTik con IP publica 202.78.170.14, tuneles IPIP y GRE hacia clientes, WireGuard con Cloudflare y Surfshark, firewall con bloqueo de torrents y P2P, DNS con NextDNS y DoH. Identifica problemas, vulnerabilidades y mejoras segun mejores practicas de MikroTik.")
         enviar_telegram(respuesta, chat_id)
         return
-
-    enviar_telegram("Procesando tu orden...", chat_id)
-    historial_chat.append({"role": "user", "content": texto})
-    respuesta = preguntar_ia(texto, historial_chat)
-    historial_chat.append({"role": "assistant", "content": respuesta})
-    if len(historial_chat) > 20:
-        historial_chat = historial_chat[-20:]
+    enviar_telegram("Procesando...", chat_id)
+    respuesta = preguntar_ia(texto)
     enviar_telegram(respuesta, chat_id)
 
 def leer_telegram():
     offset = 0
-    enviar_telegram(
-        "*Sistema IA MikroTik iniciado*\n"
-        "Escribe /inicio para ver los comandos disponibles.")
+    enviar_telegram("Sistema IA MikroTik iniciado. Escribe /inicio para comenzar.")
     while True:
         try:
-            url = ("https://api.telegram.org/bot" + TG_TOKEN +
-                   "/getUpdates?offset=" + str(offset) + "&timeout=30")
+            url = "https://api.telegram.org/bot" + TG_TOKEN + "/getUpdates?offset=" + str(offset) + "&timeout=30"
             resp = requests.get(url, timeout=35)
             data = resp.json()
             for update in data.get("result", []):
@@ -151,27 +79,19 @@ def leer_telegram():
                 chat_id = str(msg.get("chat", {}).get("id", ""))
                 texto = msg.get("text", "")
                 if texto and chat_id == TG_CHAT_ID:
-                    threading.Thread(
-                        target=procesar_mensaje,
-                        args=(texto, chat_id),
-                        daemon=True
-                    ).start()
+                    threading.Thread(target=procesar_mensaje, args=(texto, chat_id), daemon=True).start()
         except Exception as e:
             time.sleep(5)
 
 @app.route("/monitor", methods=["POST"])
 def monitor():
     datos = request.json or {}
-    cpu = int(str(datos.get("cpu", "0")).replace("%", ""))
-    mem = datos.get("mem", "0")
-    uptime = datos.get("uptime", "?")
-    if cpu > 80:
-        enviar_telegram(
-            "*ALERTA CRITICA*\nCPU al " + str(cpu) +
-            "% en tu router MikroTik\nUptime: " + str(uptime))
-    elif cpu > 60:
-        enviar_telegram(
-            "*ALERTA*\nCPU elevada al " + str(cpu) + "%")
+    cpu = datos.get("cpu", "0")
+    try:
+        if int(str(cpu).replace("%","")) > 80:
+            enviar_telegram("ALERTA: CPU al " + str(cpu) + "% en tu router MikroTik")
+    except:
+        pass
     return jsonify({"ok": True})
 
 @app.route("/ping")
@@ -188,31 +108,13 @@ if __name__ == "__main__":
 
 ---
 
-Luego agrega esta variable en Railway → Variables:
-
-| Nombre | Valor |
-|---|---|
-| `MK_HOST` | `202.78.170.14` |
-| `MK_PORT` | `13589` |
-
----
-
-También necesitamos agregar `librouteros` al requirements.txt.
-
-**En GitHub → requirements.txt → lápiz ✏️**
-
-Borra todo y pega:
+Luego en Railway verifica que tienes estas variables:
 ```
-flask
-groq
-requests
-librouteros
+GROQ_API_KEY
+TG_TOKEN
+TG_CHAT_ID
+MK_HOST = 202.78.170.14
+MK_PORT = 13589
+MK_USER = ia-bot
+MK_PASS = IaBot2026Secure!
 ```
-
-→ Commit changes
-
----
-
-Espera 2 minutos que Railway reinicie y escríbele a tu bot en Telegram:
-```
-/inicio
