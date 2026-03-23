@@ -17,7 +17,7 @@ def alerta_telegram(msg):
 
 def preguntar_ia(contexto, pregunta):
     resp = client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": "Eres experto en redes MikroTik RouterOS. Analiza datos y responde SIEMPRE en español. Si hay problemas, dilo claramente."},
             {"role": "user", "content": "Contexto: " + contexto + "\n\nPregunta: " + pregunta}
